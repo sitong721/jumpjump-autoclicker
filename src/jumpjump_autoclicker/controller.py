@@ -38,13 +38,13 @@ class DesktopController:
         screenshot_np = np.array(screenshot)
         return cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2BGR)
 
-    def focus_game_window(self, y_offset: int = 22, delay_seconds: float = 0.25) -> None:
+    def focus_game_window(self, y_ratio: float = 0.18, delay_seconds: float = 0.25) -> None:
         if self.game_window is None:
             return
 
-        x, y, width, _ = self.game_window
+        x, y, width, height = self.game_window
         focus_x = x + width // 2
-        focus_y = y + y_offset
+        focus_y = y + int(height * y_ratio)
         print(f"聚焦游戏窗口: ({focus_x}, {focus_y})")
         pyautogui.click(focus_x, focus_y)
         time.sleep(delay_seconds)
@@ -54,7 +54,7 @@ class DesktopController:
         press_time_ms: float,
         player_pos: Point,
         focus_before_press: bool = False,
-        focus_y_offset: int = 22,
+        focus_y_ratio: float = 0.18,
         focus_delay_seconds: float = 0.25,
     ) -> None:
         if self.game_window is None:
@@ -62,7 +62,7 @@ class DesktopController:
             return
 
         if focus_before_press:
-            self.focus_game_window(focus_y_offset, focus_delay_seconds)
+            self.focus_game_window(focus_y_ratio, focus_delay_seconds)
 
         x, y, _, _ = self.game_window
         click_x = x + player_pos[0]

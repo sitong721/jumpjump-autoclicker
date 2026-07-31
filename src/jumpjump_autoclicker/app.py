@@ -515,7 +515,7 @@ class JumpJumpApp:
                     press_time,
                     player_pos,
                     focus_before_press=self.config.focus_game_before_jump,
-                    focus_y_offset=self.config.focus_click_y_offset,
+                    focus_y_ratio=self.config.focus_click_y_ratio,
                     focus_delay_seconds=self.config.focus_delay_seconds,
                 )
                 jump_count = planned_jump_count
@@ -705,7 +705,7 @@ class JumpJumpApp:
                     press_time,
                     jump_start,
                     focus_before_press=self.config.focus_game_before_jump,
-                    focus_y_offset=self.config.focus_click_y_offset,
+                    focus_y_ratio=self.config.focus_click_y_ratio,
                     focus_delay_seconds=self.config.focus_delay_seconds,
                 )
                 jump_count = planned_jump_count

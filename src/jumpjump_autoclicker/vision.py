@@ -648,6 +648,9 @@ class VisionDetector:
             distance <= self.config.close_target_max_distance
             and horizontal_separation >= self.config.close_target_min_horizontal_separation
         )
+        upward_gap = player_y - target_y
+        if distance < self.config.close_target_max_distance and upward_gap < image_height * self.config.close_target_min_upward_gap_ratio:
+            return 0
         exclusion_radius = self.config.player_exclusion_radius * (0.75 if relaxed else 1.0)
         if distance < exclusion_radius and not is_close_target:
             return 0
