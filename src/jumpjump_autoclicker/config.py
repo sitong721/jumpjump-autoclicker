@@ -59,8 +59,11 @@ class AppConfig:
     target_min_y_ratio: float = 0.3
     target_max_y_gap_ratio: float = 0.18
     target_search_below_player_ratio: float = 0.25
-    target_top_y_ratio: float = 0.24
+    target_top_y_ratio: float = 0.28
     target_top_band_ratio: float = 0.25
+    target_min_slope_ratio: float = 0.45
+    target_ideal_slope_ratio: float = 0.60
+    target_max_slope_ratio: float = 0.82
     below_player_target_penalty: float = 0.35
     below_player_close_target_max_y_ratio: float = 0.08
     player_exclusion_radius: float = 80.0

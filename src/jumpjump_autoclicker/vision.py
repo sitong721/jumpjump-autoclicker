@@ -666,6 +666,9 @@ class VisionDetector:
 
         horizontal_factor = min(1.0, horizontal_separation / max(1, image_width * 0.35))
         vertical_separation = min(1.0, abs(target_y - player_y) / max(1, image_height * 0.35))
+        slope_factor = self._target_slope_factor(player_pos, landing_point, is_close_target)
+        if slope_factor <= 0:
+            return 0
         size_factor = min(1.0, area / max(1, self.config.target_min_area * 8))
         distance_factor = 0.65 + 0.35 * min(1.0, distance / max(1, self.config.min_jump_distance))
         close_boost = self.config.close_target_score_boost if is_close_target else 1.0
@@ -681,8 +684,31 @@ class VisionDetector:
             * distance_factor
             * close_boost
             * below_player_factor
+            * slope_factor
             * center_bias
         )
+
+    def _target_slope_factor(self, player_pos: Point, landing_point: Point, is_close_target: bool) -> float:
+        player_x, player_y = player_pos
+        target_x, target_y = landing_point
+        horizontal_gap = abs(target_x - player_x)
+        vertical_gap = player_y - target_y
+
+        if horizontal_gap <= 0 or vertical_gap <= 0:
+            return 1.0 if is_close_target else 0.0
+
+        slope = vertical_gap / horizontal_gap
+        min_slope = self.config.target_min_slope_ratio
+        ideal_slope = self.config.target_ideal_slope_ratio
+        max_slope = self.config.target_max_slope_ratio
+
+        if slope < min_slope and not is_close_target:
+            return 0.0
+        if slope < ideal_slope:
+            return max(0.25, (slope / ideal_slope) ** 2)
+        if slope > max_slope:
+            return max(0.35, max_slope / slope)
+        return 1.0
 
     def _save_no_target_debug(self, image: np.ndarray, player_pos: Point) -> None:
         debug_img = image.copy()
