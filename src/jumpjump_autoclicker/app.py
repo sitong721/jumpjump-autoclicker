@@ -69,9 +69,12 @@ class JumpJumpApp:
             ):
                 continue
             lateral_error = result.get("lateral_error")
+            max_lateral_ratio = (
+                0.65 if result.get("recognition_confirmed") is True else self.config.max_adjust_lateral_error_ratio
+            )
             if (
                 isinstance(lateral_error, (int, float))
-                and lateral_error > planned_distance * self.config.max_adjust_lateral_error_ratio
+                and lateral_error > planned_distance * max_lateral_ratio
             ):
                 continue
             distance_after = result.get("distance_after")
@@ -168,6 +171,7 @@ class JumpJumpApp:
                 float(lateral_error) if isinstance(lateral_error, (int, float)) else None,
                 success,
                 silent=True,
+                recognition_confirmed=result.get("recognition_confirmed") is True,
             )
             if updated:
                 used += 1
@@ -647,25 +651,7 @@ class JumpJumpApp:
                 manual_player_pos = (int(sample["manual_player_x"]), int(sample["manual_player_y"]))
                 manual_target_pos = (int(sample["manual_target_x"]), int(sample["manual_target_y"]))
                 can_use_auto = auto_player_pos is not None and auto_target_pos is not None
-                default_choice = "m" if issue or not can_use_auto else "a"
-                prompt = (
-                    f"选择本次跳跃: m=用手动点, "
-                    f"{'a=用自动点, ' if can_use_auto else ''}"
-                    f"s=跳过, q=退出 [{default_choice}]: "
-                )
-                choice = input(prompt).strip().lower() or default_choice
-                if choice == "q":
-                    break
-                if choice == "s":
-                    self.telemetry.record(
-                        "step_check_decision",
-                        loop_count=loop_count,
-                        jump_count=jump_count,
-                        decision="skip",
-                        issue=issue,
-                    )
-                    continue
-                if choice == "a" and can_use_auto:
+                if can_use_auto:
                     jump_source = "auto"
                     jump_start = auto_player_pos
                     jump_target = auto_target_pos
@@ -683,19 +669,10 @@ class JumpJumpApp:
                     f"distance={distance:.1f}px, press={press_time:.1f}ms"
                 )
 
-                confirm = input("按 Enter 执行这一跳，输入 s 跳过，q 退出: ").strip().lower()
-                if confirm == "q":
-                    break
-                if confirm == "s":
-                    self.telemetry.record(
-                        "step_check_decision",
-                        loop_count=loop_count,
-                        jump_count=jump_count,
-                        decision="skip_before_jump",
-                        jump_source=jump_source,
-                        issue=issue,
-                    )
-                    continue
+                delay = max(0.0, self.config.step_check_auto_jump_delay_seconds)
+                if delay > 0:
+                    print(f"手动标点完成，{delay:.1f} 秒后自动按 {jump_source} 点执行本次跳跃...")
+                    time.sleep(delay)
 
                 planned_jump_count = jump_count + 1
                 self.telemetry.record(
@@ -735,11 +712,18 @@ class JumpJumpApp:
                 wait_time = 1.0 + press_time / 1000 * 0.5
                 print(f"等待 {wait_time:.1f} 秒后复检...")
                 time.sleep(wait_time)
-                self._report_jump_result(jump_count, jump_start, jump_target, distance, press_time, 1.0)
+                self._report_jump_result(
+                    jump_count,
+                    jump_start,
+                    jump_target,
+                    distance,
+                    press_time,
+                    1.0,
+                    recognition_confirmed=issue is None,
+                    recognition_issue=issue,
+                )
 
-                next_choice = input("Enter 继续下一次单步核对，q 退出: ").strip().lower()
-                if next_choice == "q":
-                    break
+                print("本次单步核对完成，继续下一帧。按 Ctrl+C 可退出。")
         except KeyboardInterrupt:
             print("\n单步核对已中断")
 
@@ -1156,6 +1140,8 @@ class JumpJumpApp:
         planned_distance: float,
         press_time_ms: float,
         press_multiplier: float,
+        recognition_confirmed: bool = False,
+        recognition_issue: str | None = None,
     ) -> bool:
         image_after = self.controller.capture_game_screen()
         if image_after is None:
@@ -1197,6 +1183,8 @@ class JumpJumpApp:
             lateral_error=lateral_error,
             progress=progress,
             success=success,
+            recognition_confirmed=recognition_confirmed,
+            recognition_issue=recognition_issue,
         )
         self._update_distance_calibration_from_result(
             planned_distance,
@@ -1206,6 +1194,7 @@ class JumpJumpApp:
             progress,
             lateral_error,
             success,
+            recognition_confirmed=recognition_confirmed,
         )
 
         if not success:
@@ -1234,6 +1223,7 @@ class JumpJumpApp:
                 moved_distance,
                 progress,
                 lateral_error,
+                recognition_confirmed=recognition_confirmed,
             )
             if coefficient_adjusted:
                 self._skip_next_press_multiplier("全局系数已调整，避免重复加力")
@@ -1291,6 +1281,7 @@ class JumpJumpApp:
         lateral_error: float | None,
         success: bool,
         silent: bool = False,
+        recognition_confirmed: bool = False,
     ) -> bool:
         if planned_distance <= 0 or progress is None or progress <= 0:
             return False
@@ -1298,7 +1289,8 @@ class JumpJumpApp:
             return False
         if moved_distance < planned_distance * self.config.min_adjust_moved_ratio:
             return False
-        if lateral_error is not None and lateral_error > planned_distance * self.config.max_adjust_lateral_error_ratio:
+        max_lateral_ratio = 0.65 if recognition_confirmed else self.config.max_adjust_lateral_error_ratio
+        if lateral_error is not None and lateral_error > planned_distance * max_lateral_ratio:
             return False
         if not success and distance_after > planned_distance * self.config.max_adjust_distance_after_ratio:
             return False
@@ -1424,6 +1416,7 @@ class JumpJumpApp:
         moved_distance: float,
         progress: float | None = None,
         lateral_error: float | None = None,
+        recognition_confirmed: bool = False,
     ) -> bool:
         if not self.config.auto_adjust_coefficient:
             return False
@@ -1437,7 +1430,8 @@ class JumpJumpApp:
         if not self._is_plausible_distance(planned_distance):
             return False
         min_moved_distance = planned_distance * self.config.min_adjust_moved_ratio
-        max_lateral_error = planned_distance * self.config.max_adjust_lateral_error_ratio
+        max_lateral_ratio = 0.65 if recognition_confirmed else self.config.max_adjust_lateral_error_ratio
+        max_lateral_error = planned_distance * max_lateral_ratio
         max_distance_after = planned_distance * self.config.max_adjust_distance_after_ratio
         if moved_distance < min_moved_distance:
             self._record_coefficient_skip(
