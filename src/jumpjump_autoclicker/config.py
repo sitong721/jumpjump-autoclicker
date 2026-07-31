@@ -28,9 +28,10 @@ class AppConfig:
     game_over_button_max_y_ratio: float = 0.82
     game_over_panel_min_width_ratio: float = 0.38
     game_over_panel_min_height_ratio: float = 0.1
-    game_over_overlay_min_ratio: float = 0.55
+    game_over_overlay_min_ratio: float = 0.45
+    game_over_min_signal_score: float = 2.6
     game_over_requires_replay_button: bool = True
-    game_over_requires_overlay: bool = True
+    game_over_requires_overlay: bool = False
     ranking_detection_enabled: bool = True
     ranking_min_signals: int = 5
     ranking_dark_ratio_threshold: float = 0.62

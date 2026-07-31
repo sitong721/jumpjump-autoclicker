@@ -193,21 +193,30 @@ class VisionDetector:
             return True
 
         height, width = image.shape[:2]
-        has_replay_button = self._has_game_over_replay_button(image, width, height)
-        has_score_panel = self._has_game_over_score_panel(image, width, height)
-        has_gray_overlay = self._has_game_over_gray_overlay(image, width, height)
-        signal_count = sum((has_replay_button, has_score_panel, has_gray_overlay))
+        signals = {
+            "button": self._has_game_over_replay_button(image, width, height),
+            "score": self._has_game_over_score_panel(image, width, height),
+            "overlay": self._has_game_over_gray_overlay(image, width, height),
+            "bottom_actions": self._has_game_over_bottom_actions(image, width, height),
+        }
+        signal_score = (
+            (1.5 if signals["button"] else 0.0)
+            + (1.0 if signals["score"] else 0.0)
+            + (0.7 if signals["overlay"] else 0.0)
+            + (0.7 if signals["bottom_actions"] else 0.0)
+        )
 
         print(
             "结算页检测: "
-            f"button={has_replay_button}, panel={has_score_panel}, overlay={has_gray_overlay}"
+            + ", ".join(f"{key}={value}" for key, value in signals.items())
+            + f", score={signal_score:.1f}"
         )
 
-        is_game_over = signal_count >= 2
+        is_game_over = signal_score >= self.config.game_over_min_signal_score
         if self.config.game_over_requires_replay_button:
-            is_game_over = is_game_over and has_replay_button
+            is_game_over = is_game_over and signals["button"]
         if self.config.game_over_requires_overlay:
-            is_game_over = is_game_over and has_gray_overlay
+            is_game_over = is_game_over and signals["overlay"]
 
         if is_game_over:
             debug_img = image.copy()
@@ -351,6 +360,16 @@ class VisionDetector:
         return False
 
     def _has_game_over_score_panel(self, image: np.ndarray, width: int, height: int) -> bool:
+        score_region = image[int(height * 0.14) : int(height * 0.42), int(width * 0.2) : int(width * 0.8)]
+        score_hsv = cv2.cvtColor(score_region, cv2.COLOR_BGR2HSV)
+        score_white = cv2.inRange(score_hsv, (0, 0, 185), (180, 75, 255))
+        white_ratio = cv2.countNonZero(score_white) / max(1, score_white.size)
+        score_gray = cv2.cvtColor(score_region, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(score_gray, 40, 120)
+        edge_ratio = cv2.countNonZero(edges) / max(1, edges.size)
+        if white_ratio >= 0.025 and edge_ratio >= 0.01:
+            return True
+
         middle_y = int(height * 0.24)
         middle = image[middle_y : int(height * 0.76), :]
         hsv = cv2.cvtColor(middle, cv2.COLOR_BGR2HSV)
@@ -376,6 +395,32 @@ class VisionDetector:
         grayish = cv2.inRange(hsv, (0, 0, 90), (180, 45, 220))
         ratio = cv2.countNonZero(grayish) / max(1, grayish.size)
         return ratio >= self.config.game_over_overlay_min_ratio
+
+    def _has_game_over_bottom_actions(self, image: np.ndarray, width: int, height: int) -> bool:
+        region = image[int(height * 0.64) : int(height * 0.86), int(width * 0.08) : int(width * 0.92)]
+        hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+        white_mask = cv2.inRange(hsv, (0, 0, 200), (180, 80, 255))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
+        contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        wide_actions = 0
+        round_actions = 0
+        for contour in contours:
+            x, _, action_width, action_height = cv2.boundingRect(contour)
+            if action_width < width * 0.08 or action_height < height * 0.035:
+                continue
+            if action_height > height * 0.14:
+                continue
+
+            aspect = action_width / max(1, action_height)
+            center_x = x + action_width / 2
+            if 1.8 <= aspect <= 7.5 and width * 0.2 <= center_x <= width * 0.8:
+                wide_actions += 1
+            elif 0.65 <= aspect <= 1.45:
+                round_actions += 1
+
+        return wide_actions >= 1 and round_actions >= 1
 
     def find_target_position(self, image: np.ndarray, player_pos: Point | None) -> Point | None:
         if player_pos is None:
