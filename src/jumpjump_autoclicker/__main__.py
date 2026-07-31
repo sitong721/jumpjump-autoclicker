@@ -29,11 +29,19 @@ def main() -> None:
         default=5.0,
         help="配合 --verify-during-run 使用，手动点选完成后等待多少秒再继续跳跃",
     )
+    parser.add_argument(
+        "--step-check",
+        action="store_true",
+        help="step-by-step manual point check, then jump once with manual or auto points",
+    )
     args = parser.parse_args()
 
     app = JumpJumpApp()
     if args.verify_once:
         app.run_manual_point_check()
+        return
+    if args.step_check:
+        app.run_step_check()
         return
 
     app.run(

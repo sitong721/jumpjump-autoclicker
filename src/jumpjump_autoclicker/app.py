@@ -32,7 +32,7 @@ class JumpJumpApp:
             if bootstrapped > 0:
                 print(f"已从历史数据初始化距离力度桶: {bootstrapped} 个样本")
         historical_coefficient = self._apply_historical_coefficient()
-        self.controller = DesktopController()
+        self.controller = DesktopController(fail_safe=self.config.pyautogui_fail_safe)
 
         player_template = load_template(self.config.assets_dir / "player" / "player_1.png")
         background_templates = load_templates(self.config.assets_dir / "background")
@@ -491,14 +491,14 @@ class JumpJumpApp:
                         time.sleep(verify_resume_delay)
                     print("跳前校验结束，继续执行本次跳跃")
 
-                jump_count += 1
+                planned_jump_count = jump_count + 1
                 idle_rounds = 0
                 self.pending_far_target = None
                 self.pending_low_confidence_player = None
                 self.telemetry.record(
                     "jump_planned",
                     loop_count=loop_count,
-                    jump_count=jump_count,
+                    jump_count=planned_jump_count,
                     player_pos=player_pos,
                     target_pos=target_pos,
                     distance=distance,
@@ -514,6 +514,7 @@ class JumpJumpApp:
                     focus_y_offset=self.config.focus_click_y_offset,
                     focus_delay_seconds=self.config.focus_delay_seconds,
                 )
+                jump_count = planned_jump_count
                 wait_time = 1.0 + press_time / 1000 * 0.5
                 print(f"等待 {wait_time:.1f} 秒...")
                 time.sleep(wait_time)
@@ -591,6 +592,158 @@ class JumpJumpApp:
             manual_target_pos,
         )
         print("校验图已保存到 debug/manual_point_check_*.png")
+
+    def run_step_check(self) -> None:
+        print("微信跳一跳单步核对模式")
+        print("=" * 50)
+        print("每轮先手动点棋子/目标，再选择只跳一次。")
+        print("建议优先选 m 用手动点跳：如果仍偏，就是力度桶/系数问题；如果手动准而自动不准，就是检测点问题。")
+        self.select_game_region()
+
+        loop_count = 0
+        jump_count = 0
+        try:
+            while True:
+                loop_count += 1
+                print(f"\n=== 单步核对 #{loop_count}，已跳 {jump_count} 次 ===")
+
+                image = self.controller.capture_game_screen()
+                if image is None:
+                    print("截图失败")
+                    break
+
+                if self.vision.is_game_over_screen(image):
+                    print("检测到结算页，单步核对结束")
+                    self.telemetry.record("game_over_detected", loop_count=loop_count, jump_count=jump_count)
+                    break
+
+                auto_player_pos = self.vision.find_player_position(image)
+                auto_target_pos = self.vision.find_target_position(image, auto_player_pos)
+                print(f"自动棋子: {auto_player_pos if auto_player_pos is not None else '未找到'}")
+                print(f"自动目标: {auto_target_pos if auto_target_pos is not None else '未找到'}")
+
+                sample = self._manual_point_check_for_image(
+                    image,
+                    auto_player_pos,
+                    auto_target_pos,
+                    f"单步核对 #{loop_count}",
+                )
+                if sample is None:
+                    choice = input("本轮未标注。Enter 重新截图，q 退出: ").strip().lower()
+                    if choice == "q":
+                        break
+                    continue
+
+                sample["loop_count"] = float(loop_count)
+                sample["jump_count"] = float(jump_count)
+                self.telemetry.record("manual_point_check", **sample)
+
+                issue = self._manual_verification_issue(sample)
+                if issue:
+                    print(f"本轮更像检测问题: {issue}")
+                else:
+                    print("本轮自动点接近手动点，可以用自动点或手动点继续验证力度。")
+
+                manual_player_pos = (int(sample["manual_player_x"]), int(sample["manual_player_y"]))
+                manual_target_pos = (int(sample["manual_target_x"]), int(sample["manual_target_y"]))
+                can_use_auto = auto_player_pos is not None and auto_target_pos is not None
+                default_choice = "m" if issue or not can_use_auto else "a"
+                prompt = (
+                    f"选择本次跳跃: m=用手动点, "
+                    f"{'a=用自动点, ' if can_use_auto else ''}"
+                    f"s=跳过, q=退出 [{default_choice}]: "
+                )
+                choice = input(prompt).strip().lower() or default_choice
+                if choice == "q":
+                    break
+                if choice == "s":
+                    self.telemetry.record(
+                        "step_check_decision",
+                        loop_count=loop_count,
+                        jump_count=jump_count,
+                        decision="skip",
+                        issue=issue,
+                    )
+                    continue
+                if choice == "a" and can_use_auto:
+                    jump_source = "auto"
+                    jump_start = auto_player_pos
+                    jump_target = auto_target_pos
+                else:
+                    jump_source = "manual"
+                    jump_start = manual_player_pos
+                    jump_target = manual_target_pos
+
+                distance = self.vision.weighted_distance(jump_start, jump_target)
+                self._print_distance_bucket_hint(distance)
+                press_time = self.calculate_press_time(distance)
+                effective_coefficient = press_time / distance if distance > 0 else self.config.press_coefficient
+                print(
+                    f"本次使用 {jump_source} 点: start={jump_start}, target={jump_target}, "
+                    f"distance={distance:.1f}px, press={press_time:.1f}ms"
+                )
+
+                confirm = input("按 Enter 执行这一跳，输入 s 跳过，q 退出: ").strip().lower()
+                if confirm == "q":
+                    break
+                if confirm == "s":
+                    self.telemetry.record(
+                        "step_check_decision",
+                        loop_count=loop_count,
+                        jump_count=jump_count,
+                        decision="skip_before_jump",
+                        jump_source=jump_source,
+                        issue=issue,
+                    )
+                    continue
+
+                planned_jump_count = jump_count + 1
+                self.telemetry.record(
+                    "step_check_decision",
+                    loop_count=loop_count,
+                    jump_count=planned_jump_count,
+                    decision="jump",
+                    jump_source=jump_source,
+                    issue=issue,
+                    selected_player_pos=jump_start,
+                    selected_target_pos=jump_target,
+                    selected_distance=distance,
+                    selected_press_time_ms=press_time,
+                    effective_coefficient=effective_coefficient,
+                )
+                self.telemetry.record(
+                    "jump_planned",
+                    loop_count=loop_count,
+                    jump_count=planned_jump_count,
+                    player_pos=jump_start,
+                    target_pos=jump_target,
+                    distance=distance,
+                    press_time_ms=press_time,
+                    coefficient=self.config.press_coefficient,
+                    effective_coefficient=effective_coefficient,
+                    press_multiplier=1.0,
+                    point_source=jump_source,
+                )
+                self.controller.perform_jump(
+                    press_time,
+                    jump_start,
+                    focus_before_press=self.config.focus_game_before_jump,
+                    focus_y_offset=self.config.focus_click_y_offset,
+                    focus_delay_seconds=self.config.focus_delay_seconds,
+                )
+                jump_count = planned_jump_count
+                wait_time = 1.0 + press_time / 1000 * 0.5
+                print(f"等待 {wait_time:.1f} 秒后复检...")
+                time.sleep(wait_time)
+                self._report_jump_result(jump_count, jump_start, jump_target, distance, press_time, 1.0)
+
+                next_choice = input("Enter 继续下一次单步核对，q 退出: ").strip().lower()
+                if next_choice == "q":
+                    break
+        except KeyboardInterrupt:
+            print("\n单步核对已中断")
+
+        print(f"单步核对结束，共执行 {jump_count} 次跳跃")
 
     def _manual_point_check_for_image(
         self,

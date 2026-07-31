@@ -132,9 +132,11 @@ class VisionDetector:
         red_channel = bgr[:, :, 2]
         purple_bgr_mask = (
             (blue_channel > 45)
-            & (green_channel < 115)
-            & (red_channel < 145)
+            & (green_channel < 110)
+            & (red_channel > 35)
+            & (red_channel < 135)
             & (blue_channel > green_channel + 8)
+            & (blue_channel <= red_channel + 85)
         ).astype(np.uint8) * 255
         purple_mask = cv2.bitwise_or(purple_mask, purple_bgr_mask)
 
@@ -165,6 +167,15 @@ class VisionDetector:
             if h < height * 0.045 or h > height * 0.13:
                 continue
             if y + h < height * self.config.player_color_min_y_ratio:
+                continue
+
+            candidate_mask = purple_mask[y : y + h, x : x + w]
+            candidate_region = hsv[y : y + h, x : x + w]
+            candidate_pixels = candidate_region[candidate_mask > 0]
+            if candidate_pixels.size == 0:
+                continue
+            mean_value = float(candidate_pixels[:, 2].mean())
+            if mean_value > self.config.player_color_max_mean_value:
                 continue
 
             player_x = x + w // 2

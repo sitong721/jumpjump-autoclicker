@@ -50,7 +50,8 @@ class AppConfig:
     player_low_confidence_position_tolerance: float = 8.0
     player_color_fallback_enabled: bool = True
     player_color_min_area: int = 120
-    player_color_max_area: int = 1600
+    player_color_max_area: int = 6000
+    player_color_max_mean_value: float = 175.0
     player_color_min_y_ratio: float = 0.32
     player_color_max_y_ratio: float = 0.95
     target_min_area: int = 180
@@ -114,3 +115,4 @@ class AppConfig:
     focus_game_before_jump: bool = True
     focus_click_y_offset: int = 22
     focus_delay_seconds: float = 0.25
+    pyautogui_fail_safe: bool = False

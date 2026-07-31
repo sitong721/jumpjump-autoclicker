@@ -15,7 +15,8 @@ GameWindow: TypeAlias = tuple[int, int, int, int]
 class DesktopController:
     """Screen capture and mouse operations for the desktop game window."""
 
-    def __init__(self) -> None:
+    def __init__(self, fail_safe: bool = True) -> None:
+        pyautogui.FAILSAFE = fail_safe
         self.screen_width, self.screen_height = pyautogui.size()
         self.game_window: GameWindow | None = None
 
