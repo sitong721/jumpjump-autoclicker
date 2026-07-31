@@ -22,6 +22,7 @@ class JumpJumpApp:
         self.config = config or AppConfig()
         self.next_press_multiplier = 1.0
         self.pending_far_target: tuple[tuple[int, int], int] | None = None
+        self.last_far_target_confirmed = False
         self.pending_low_confidence_player: tuple[tuple[int, int], int] | None = None
         self.distance_calibration = self._load_distance_calibration()
         self.debug_writer = DebugWriter(self.config.debug_mode, self.config.debug_dir)
@@ -916,6 +917,7 @@ class JumpJumpApp:
         distance: float,
         idle_rounds: int,
     ) -> bool:
+        self.last_far_target_confirmed = False
         if idle_rounds <= 0 or distance <= self.config.max_jump_distance_after_target_lost:
             self.pending_far_target = None
             return False
@@ -936,6 +938,7 @@ class JumpJumpApp:
         if seen_count >= self.config.far_target_confirmation_rounds:
             print(f"远目标连续确认 {seen_count} 次，允许跳跃")
             self.pending_far_target = None
+            self.last_far_target_confirmed = True
             return False
         return True
 
@@ -952,7 +955,15 @@ class JumpJumpApp:
                 and horizontal_separation >= self.config.close_target_min_horizontal_separation
             )
         if not self._is_plausible_distance(distance):
-            return False
+            if not (
+                self.last_far_target_confirmed
+                and distance <= self.config.max_jump_distance + self.config.confirmed_far_target_distance_margin
+            ):
+                return False
+            print(
+                f"远目标已连续确认，允许超过常规距离上限 "
+                f"{distance:.1f}px > {self.config.max_jump_distance:.1f}px"
+            )
         if horizontal_separation < self.config.min_horizontal_separation:
             return False
         return True

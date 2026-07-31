@@ -75,6 +75,7 @@ class AppConfig:
     success_distance_threshold: float = 50.0
     min_jump_distance: float = 140.0
     max_jump_distance: float = 520.0
+    confirmed_far_target_distance_margin: float = 45.0
     max_jump_distance_after_target_lost: float = 420.0
     far_target_confirmation_rounds: int = 2
     far_target_confirmation_tolerance: float = 35.0
