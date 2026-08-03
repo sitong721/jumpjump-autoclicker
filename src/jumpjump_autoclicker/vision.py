@@ -99,7 +99,12 @@ class VisionDetector:
                 self.last_player_detection_source = "color"
                 print(f"棋子颜色兜底位置: {fallback_pos}")
                 return fallback_pos
-            if np.isfinite(max_val) and max_val > self.config.player_match_threshold:
+            if np.isfinite(max_val) and max_val > self.config.player_low_match_threshold:
+                if max_val <= self.config.player_match_threshold:
+                    print(
+                        "棋子模板低分兜底，等待稳定确认 "
+                        f"({max_val:.3f} > {self.config.player_low_match_threshold:.3f})"
+                    )
                 self.last_player_detection_source = "template"
                 return self._player_position_from_template(image, max_loc)
             return None
@@ -125,7 +130,7 @@ class VisionDetector:
 
         height, width = image.shape[:2]
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        purple_mask = cv2.inRange(hsv, (105, 35, 25), (150, 255, 205))
+        purple_mask = cv2.inRange(hsv, (118, 32, 25), (152, 255, 210))
         bgr = image
         blue_channel = bgr[:, :, 0]
         green_channel = bgr[:, :, 1]
@@ -134,11 +139,13 @@ class VisionDetector:
             (blue_channel > 45)
             & (green_channel < 110)
             & (red_channel > 35)
-            & (red_channel < 135)
+            & (red_channel < 145)
             & (blue_channel > green_channel + 8)
             & (blue_channel <= red_channel + 85)
         ).astype(np.uint8) * 255
         purple_mask = cv2.bitwise_or(purple_mask, purple_bgr_mask)
+        dark_player_mask = (hsv[:, :, 2] <= self.config.player_color_max_mask_value).astype(np.uint8) * 255
+        purple_mask = cv2.bitwise_and(purple_mask, dark_player_mask)
 
         y_min = int(height * self.config.player_color_min_y_ratio)
         y_max = int(height * self.config.player_color_max_y_ratio)
@@ -164,7 +171,7 @@ class VisionDetector:
             aspect = w / h
             if aspect < 0.28 or aspect > 0.95:
                 continue
-            if h < height * 0.045 or h > height * 0.13:
+            if h < height * self.config.player_color_min_height_ratio or h > height * 0.13:
                 continue
             if y + h < height * self.config.player_color_min_y_ratio:
                 continue
@@ -186,6 +193,11 @@ class VisionDetector:
             candidates.append((score, (player_x, player_y), (x, y, w, h)))
 
         if not candidates:
+            debug_img = image.copy()
+            mask_overlay = np.zeros_like(debug_img)
+            mask_overlay[:, :, 2] = purple_mask
+            debug_img = cv2.addWeighted(debug_img, 0.75, mask_overlay, 0.25, 0)
+            self.debug_writer.save("player_color_mask_no_candidate", debug_img)
             return None
 
         _, player_pos, bbox = max(candidates, key=lambda item: item[0])

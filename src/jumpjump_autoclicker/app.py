@@ -51,6 +51,11 @@ class JumpJumpApp:
         results = self.telemetry.recent_events("jump_result", self.config.max_history_samples)
         estimates: list[float] = []
         for result in results:
+            if (
+                self.config.auto_adjust_requires_recognition_confirmation
+                and result.get("recognition_confirmed") is not True
+            ):
+                continue
             progress = result.get("progress")
             press_time_ms = result.get("press_time_ms")
             if not isinstance(progress, (int, float)) or not isinstance(press_time_ms, (int, float)):
@@ -148,6 +153,11 @@ class JumpJumpApp:
         results = self.telemetry.recent_events("jump_result", self.config.max_history_samples)
         used = 0
         for result in results:
+            if (
+                self.config.auto_adjust_requires_recognition_confirmation
+                and result.get("recognition_confirmed") is not True
+            ):
+                continue
             planned_distance = result.get("planned_distance")
             press_time_ms = result.get("press_time_ms")
             distance_after = result.get("distance_after")
@@ -1087,9 +1097,11 @@ class JumpJumpApp:
     ) -> bool:
         horizontal_separation = abs(target_pos[0] - start_pos[0])
         if distance < self.config.min_jump_distance:
+            upward_gap = start_pos[1] - target_pos[1]
             return (
                 distance <= self.config.close_target_max_distance
                 and horizontal_separation >= self.config.close_target_min_horizontal_separation
+                and upward_gap >= self.config.close_target_min_upward_gap_px
             )
         if not self._is_plausible_distance(distance):
             if not (
@@ -1283,6 +1295,8 @@ class JumpJumpApp:
         silent: bool = False,
         recognition_confirmed: bool = False,
     ) -> bool:
+        if self.config.auto_adjust_requires_recognition_confirmation and not recognition_confirmed:
+            return False
         if planned_distance <= 0 or progress is None or progress <= 0:
             return False
         if progress < self.config.min_valid_progress or progress > self.config.max_valid_progress:
@@ -1428,6 +1442,16 @@ class JumpJumpApp:
         if lateral_error is None:
             lateral_error = self._jump_lateral_error(start_pos, target_pos, actual_pos, progress)
         if not self._is_plausible_distance(planned_distance):
+            return False
+        if self.config.auto_adjust_requires_recognition_confirmation and not recognition_confirmed:
+            self._record_coefficient_skip(
+                "manual_confirmation_required",
+                progress,
+                planned_distance,
+                distance_after,
+                moved_distance,
+                lateral_error,
+            )
             return False
         min_moved_distance = planned_distance * self.config.min_adjust_moved_ratio
         max_lateral_ratio = 0.65 if recognition_confirmed else self.config.max_adjust_lateral_error_ratio

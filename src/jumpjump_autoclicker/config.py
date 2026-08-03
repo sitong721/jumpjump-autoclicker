@@ -16,7 +16,7 @@ class AppConfig:
     telemetry_path: Path = PROJECT_ROOT / "debug" / "jump_history.jsonl"
     calibration_path: Path = PROJECT_ROOT / "debug" / "distance_calibration.json"
     telemetry_enabled: bool = True
-    press_coefficient: float = 1.82
+    press_coefficient: float = 1.86
     debug_mode: bool = True
     game_ready_delay_seconds: float = 5.0
     start_delay_seconds: float = 3.0
@@ -44,14 +44,17 @@ class AppConfig:
     redetect_delay_seconds: float = 1.0
     background_match_threshold: float = 0.68
     background_match_scales: tuple[float, ...] = (0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2)
-    player_match_threshold: float = 0.45
+    player_match_threshold: float = 0.43
+    player_low_match_threshold: float = 0.35
     player_stable_match_threshold: float = 0.52
     player_low_confidence_confirmation_rounds: int = 2
-    player_low_confidence_position_tolerance: float = 8.0
+    player_low_confidence_position_tolerance: float = 18.0
     player_color_fallback_enabled: bool = True
-    player_color_min_area: int = 120
+    player_color_min_area: int = 80
     player_color_max_area: int = 6000
-    player_color_max_mean_value: float = 175.0
+    player_color_max_mean_value: float = 190.0
+    player_color_max_mask_value: float = 190.0
+    player_color_min_height_ratio: float = 0.038
     player_color_min_y_ratio: float = 0.32
     player_color_max_y_ratio: float = 0.95
     target_min_area: int = 180
@@ -70,7 +73,8 @@ class AppConfig:
     close_target_min_upward_gap_ratio: float = 0.035
     player_exclusion_radius: float = 80.0
     current_platform_exclusion_radius: float = 115.0
-    close_target_min_horizontal_separation: float = 130.0
+    close_target_min_horizontal_separation: float = 70.0
+    close_target_min_upward_gap_px: float = 45.0
     close_target_max_distance: float = 180.0
     close_target_score_boost: float = 1.45
     side_search_margin: int = 35
@@ -86,6 +90,7 @@ class AppConfig:
     far_target_confirmation_tolerance: float = 35.0
     min_horizontal_separation: float = 45.0
     auto_adjust_coefficient: bool = True
+    auto_adjust_requires_recognition_confirmation: bool = True
     coefficient_adjust_step: float = 0.02
     coefficient_learning_rate: float = 0.35
     max_coefficient_change_ratio: float = 0.12
@@ -113,7 +118,7 @@ class AppConfig:
     max_press_time_ms: float = 1300.0
     min_press_coefficient: float = 1.1
     max_press_coefficient: float = 2.35
-    focus_game_before_jump: bool = True
+    focus_game_before_jump: bool = False
     focus_click_y_ratio: float = 0.18
     focus_delay_seconds: float = 0.25
     pyautogui_fail_safe: bool = False
